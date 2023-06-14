@@ -6,7 +6,7 @@ This is a simple web application that generates cover letters based on your CV a
 
 To use the Cover Letter Generator, follow these steps:
 
-1. Open the [Cover Letter Generator](index.html) in your web browser.
+1. Open the [Cover Letter Generator](https://ibrahim-dogan.github.io/gpt-cover-letter-generator/) in your web browser.
 2. Paste your CV into the "Paste your CV here" textarea.
 3. Paste the job description into the "Paste job description here" textarea.
 4. Click the "Generate" button to generate the cover letter based on the provided inputs.
