@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Cover Letter Generator</title>
+  <link rel="stylesheet" href="https://unpkg.com/tailwindcss@2.0.1/dist/tailwind.min.css">
+</head>
+<body>
+<div class="flex flex-col h-screen">
+  <div class="p-4 flex-grow flex flex-row">
+    <div class="flex-1 m-2">
+      <textarea id="cv" name="cv" class="w-full h-full p-2 bg-gray-100" placeholder="Paste your CV here"></textarea>
+    </div>
+    <div class="flex-1 m-2">
+      <textarea id="jobDescription" name="jobDescription" class="w-full h-full p-2 bg-gray-100"
+                placeholder="Paste job description here"></textarea>
+    </div>
+  </div>
+  <div class="p-4 flex-grow">
+    <textarea id="coverLetter" name="coverLetter" class="w-full h-full p-2 bg-gray-100"
+              placeholder="Cover letter will appear here"></textarea>
+  </div>
+  <div class="p-4">
+    <button id="generateButton" class="bg-blue-500 text-white font-bold py-2 px-4 rounded">Generate</button>
+    <button id="copyButton" class="bg-yellow-500 text-white font-bold py-2 px-4 rounded ml-4" disabled>Copy</button>
+    <button id="downloadButton" class="bg-green-500 text-white font-bold py-2 px-4 rounded ml-4" disabled>Download PDF
+    </button>
+    <button id="settingsButton" class="bg-gray-500 text-white font-bold py-2 px-4 rounded ml-4">Settings</button>
+  </div>
+</div>
+<div id="modal" class="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 hidden">
+  <div class="bg-white p-4 rounded">
+    <h2 class="text-lg font-semibold mb-2">API Key Settings</h2>
+    <input id="apiKeyInput" type="text" class="border border-gray-300 rounded px-2 py-1 w-64"
+           placeholder="Enter your API key">
+    <button id="saveApiKeyButton" class="bg-blue-500 text-white font-bold py-2 px-4 rounded mt-2">Save</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.70/pdfmake.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.70/vfs_fonts.js"></script>
+
+<script>
+  const generateButton = document.getElementById('generateButton');
+  const downloadButton = document.getElementById('downloadButton');
+  const copyButton = document.getElementById('copyButton');
+  const cvTextArea = document.getElementById('cv');
+  const jobDescriptionTextArea = document.getElementById('jobDescription');
+  const coverLetterTextArea = document.getElementById('coverLetter');
+  const settingsButton = document.getElementById('settingsButton');
+  const modal = document.getElementById('modal');
+  const apiKeyInput = document.getElementById('apiKeyInput');
+  const saveApiKeyButton = document.getElementById('saveApiKeyButton');
+
+  const API_URL = "https://api.openai.com/v1/chat/completions";
+  const API_KEY = loadApiKey() || (() => {
+    modal.style.display = 'flex';
+  })();
+
+  let coverLetterDetails = {}
+
+  async function generateCoverLetter(cvPrompt, jobDescriptionPrompt) {
+    const headers = {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${API_KEY}`,
+      "Accept-Encoding": "",
+    };
+
+    const body = JSON.stringify({
+      model: "gpt-3.5-turbo",
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are a software developer, you develop software programs and applications using programming languages and development tools. You are turkish and want to relocate to europe",
+        },
+        {
+          role: "user",
+          content: "my current cv is" + cvPrompt,
+        },
+        {
+          role: "user",
+          content:
+            "write cover letter from my name and do not use []. do not mention anything is not on my cv and do not lie. at the end of the cover letter print ***** and return this {\"companyName\":COMPANY_NAME_FROM_JOB_DESCRIPTION,\"yourName\":MY_NAME,\"fileName\":cover_letter_{{company_name_as_snake_case}}}, here is job description: \n" + jobDescriptionPrompt,
+        },
+      ],
+      presence_penalty: 0,
+      stream: true,
+      temperature: 1,
+      top_p: 1,
+    });
+
+    const response = await fetch(API_URL, {
+      method: "POST",
+      headers: {
+        ...headers,
+        "Content-Length": body.length.toString(),
+      },
+      body,
+    });
+
+    const reader = response.body.getReader();
+    let greeting = "";
+    while (true) {
+      const {done, value} = await reader.read();
+      if (done) break;
+      const chunk = new TextDecoder().decode(value);
+      try {
+        let data = chunk.split("data: ")
+        data = data.filter((str) => str !== '' && !str.includes("[DONE]"));
+        data.forEach((value) => {
+          const parsedChunk = JSON.parse(value);
+          if (parsedChunk.choices[0].delta.content) {
+            greeting += parsedChunk.choices[0].delta.content;
+          }
+        })
+      } catch {
+        console.log("Error parsing JSON: ", chunk);
+      }
+      coverLetterTextArea.value = greeting;
+    }
+    const regex = /(?<=\*\*\*\*\*)[\s\S]*/;
+    const parsedText = greeting.match(regex)[0].trim();
+    coverLetterDetails = JSON.parse(parsedText);
+    downloadButton.innerText = `Download ${coverLetterDetails.fileName}.pdf`
+
+    greeting = greeting.split("*****")[0]
+
+    return greeting;
+  }
+
+  function saveApiKey(apiKey) {
+    localStorage.setItem('apiKey', apiKey);
+  }
+
+  function loadApiKey() {
+    return localStorage.getItem('apiKey');
+  }
+
+  window.addEventListener('load', () => {
+    if (localStorage.getItem('cv')) {
+      cvTextArea.value = localStorage.getItem('cv');
+    }
+    if (localStorage.getItem('jobDescription')) {
+      jobDescriptionTextArea.value = localStorage.getItem('jobDescription');
+    }
+  });
+
+  cvTextArea.addEventListener('input', () => {
+    localStorage.setItem('cv', cvTextArea.value);
+  });
+
+  jobDescriptionTextArea.addEventListener('input', () => {
+    localStorage.setItem('jobDescription', jobDescriptionTextArea.value);
+  });
+
+  generateButton.addEventListener('click', async () => {
+    const cvPrompt = cvTextArea.value;
+    const jobDescriptionPrompt = jobDescriptionTextArea.value;
+
+    generateButton.disabled = true;
+
+    coverLetterTextArea.value = await generateCoverLetter(cvPrompt, jobDescriptionPrompt);
+
+    generateButton.disabled = false;
+
+    downloadButton.disabled = false;
+    copyButton.disabled = false;
+  });
+
+  downloadButton.addEventListener('click', () => {
+    const coverLetterContent = coverLetterTextArea.value;
+
+    if (coverLetterContent) {
+      var documentDefinition = {
+        content: [
+          coverLetterContent
+        ],
+      };
+
+      pdfMake.createPdf(documentDefinition).download(coverLetterDetails.fileName + '.pdf');
+    }
+  });
+
+  copyButton.addEventListener('click', () => {
+    const coverLetterContent = coverLetterTextArea.value;
+
+    if (coverLetterContent) {
+      navigator.clipboard.writeText(coverLetterContent)
+        .then(() => {
+          window.getSelection().removeAllRanges();
+        })
+        .catch((error) => {
+          console.error('Failed to copy text: ', error);
+        });
+    }
+  });
+
+  settingsButton.addEventListener('click', () => {
+    modal.style.display = 'flex';
+  });
+
+  saveApiKeyButton.addEventListener('click', () => {
+    const apiKey = apiKeyInput.value;
+    saveApiKey(apiKey);
+    modal.style.display = 'none';
+  });
+
+  window.addEventListener('load', () => {
+    const savedApiKey = loadApiKey();
+    if (savedApiKey) {
+      apiKeyInput.value = savedApiKey;
+    }
+  });
+
+</script>
+</body>
+</html>
